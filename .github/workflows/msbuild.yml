@@ -7,8 +7,9 @@ on:
     branches: [ "master" ]
 
 env:
-  SOLUTION_FILE_PATH: .
+  SOLUTION_FILE_PATH: .  # Update this to your solution file
   BUILD_CONFIGURATION: Release
+  OUTPUT_DIR: ./build_output
 
 permissions:
   contents: read
@@ -20,7 +21,38 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Build with Docker
-      run: |
-        docker build -t msbuild-env .
-        docker run --rm -v $(pwd):/workspace -w /workspace msbuild-env msbuild ${{env.SOLUTION_FILE_PATH}} /p:Configuration=${{env.BUILD_CONFIGURATION}}
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Restore NuGet packages
+      run: nuget restore ${{ env.SOLUTION_FILE_PATH }}
+
+    - name: Build
+      run: msbuild ${{ env.SOLUTION_FILE_PATH }} /p:Configuration=${{ env.BUILD_CONFIGURATION }} /p:OutputPath=${{ env.OUTPUT_DIR }}
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v1.0.${{ github.run_number }}
+        release_name: Release ${{ github.run_number }}
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Asset (Executable)
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ${{ env.OUTPUT_DIR }}/GDRVLoader.exe  # Update this path to your actual executable file
+        asset_name: program-${{ runner.os }}.exe
+        asset_content_type: application/octet-stream
+
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts
+        path: ${{ env.OUTPUT_DIR }}
